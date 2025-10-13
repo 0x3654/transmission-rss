@@ -1,25 +1,23 @@
-# docker build -t transmission-rss .
-# docker build -t transmission-rss --build-arg UID=1337 --build-arg GID=1337 .
-# docker run -it -v $(pwd)/transmission-rss.conf:/etc/transmission-rss.conf transmission-rss
-#
-# docker build -t nning2/transmission-rss:v1.2.3 .
-# docker tag nning2/transmission-rss:v1.2.3 nning2/transmission-rss:latest
-# docker push nning2/transmission-rss:v1.2.3
-
-FROM alpine:3 as builder
-RUN apk add gcc libc-dev make ruby-dev
-COPY . /tmp
+FROM alpine:3 AS builder
+RUN apk add --no-cache ruby build-base
 WORKDIR /tmp
+COPY . .
 RUN gem build transmission-rss.gemspec
-RUN gem install -N --build-root /build transmission-rss-*.gem
-
+RUN gem install getoptlong --no-document --install-dir /build/gems
+RUN gem install base64 --no-document --install-dir /build/gems
+RUN gem install -N --install-dir /build/gems --bindir /build/bin transmission-rss-*.gem
+RUN ruby -e 'puts RbConfig::CONFIG["ruby_version"]' > /gemver
 FROM alpine:3
 ARG UID=1000
 ARG GID=1000
-RUN \
-  addgroup -g $GID ruby && \
-  adduser -u $UID -G ruby -D ruby && \
-  apk add --no-cache ruby ruby-etc ruby-json
+RUN apk add --no-cache ruby && \
+    addgroup -g $GID ruby && \
+    adduser -u $UID -G ruby -D ruby
+COPY --from=builder /build/bin/transmission-rss /usr/local/bin/
+COPY --from=builder /gemver /gemver
+COPY --from=builder /build/gems /build/gems
+RUN gemver=$(cat /gemver) && \
+    mkdir -p /usr/lib/ruby/gems/${gemver} && \
+    cp -a /build/gems/* /usr/lib/ruby/gems/${gemver}/
 USER ruby
-COPY --from=builder /build /
 CMD ["transmission-rss"]
